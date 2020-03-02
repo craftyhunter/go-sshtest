@@ -8,10 +8,11 @@ const (
 	MsgTypeShell  = "shell"
 	MsgTypeSignal = "signal"
 
-	MsgTypeSubsystem    = "subsystem"
-	MsgTypeExitStatus   = "exit-status"
-	MsgTypeExitSignal   = "exit-signal"
-	MsgTypeTcpIpForward = "tcpip-forward"
+	MsgTypeSubsystem       = "subsystem"
+	MsgTypeExitStatus      = "exit-status"
+	MsgTypeExitSignal      = "exit-signal"
+	MsgTypeTcpIpForward    = "tcpip-forward"
+	MsgTypePTYWindowChange = "window-change"
 )
 
 // RFC 4254 Section 6.2 Requesting a Pseudo-Terminal
@@ -129,4 +130,11 @@ type MsgChannelOpenDirect struct {
 type MsgUnparsed struct {
 	Type    string
 	Payload []byte
+}
+
+func NewUnparsedMsg(msgType string, payload []byte) *MsgUnparsed {
+	return &MsgUnparsed{
+		Type:    msgType,
+		Payload: payload,
+	}
 }
