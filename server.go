@@ -16,9 +16,6 @@ type AuthType int
 
 const (
 	ServerVersion = "SSH-2.0-ServerMock 1.0"
-
-	AuthPublicKey AuthType = iota
-	AuthCertificate
 )
 
 type Server struct {
@@ -43,7 +40,7 @@ type Server struct {
 
 	*MockData
 
-	ServedConnections []*Connection
+	servedConnections []*Connection
 }
 
 func NewMockedServer() (server *Server) {
@@ -77,6 +74,10 @@ func NewServer(listenAddr string, serverKey ssh.Signer) (server *Server) {
 
 	server.ServerConfig.AddHostKey(serverKey)
 	return
+}
+
+func (s *Server) ServedConnections() []*Connection {
+	return s.servedConnections
 }
 
 func (s *Server) AllowClientNoAuth() {
@@ -131,8 +132,8 @@ func (s *Server) serve() {
 
 		debugf("accepted new connection from %s", netConn.RemoteAddr().String())
 		conn := NewConnection(netConn)
-		s.ServedConnections = append(s.ServedConnections, conn)
-		conn.MockData = s.MockData
+		s.servedConnections = append(s.servedConnections, conn)
+		conn.mockData = s.MockData
 
 		s.wg.Add(1)
 		go func() {

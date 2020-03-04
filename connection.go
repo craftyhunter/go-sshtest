@@ -18,7 +18,7 @@ func NewConnection(conn net.Conn) *Connection {
 
 type Connection struct {
 	net.Conn
-	*MockData
+	mockData *MockData
 	Stat *ConnectionStat
 }
 
@@ -29,13 +29,11 @@ type ConnectionStat struct {
 
 	ClientVersion    string
 	ClientRemoteAddr string
-	Authenticated    bool
-	AuthTries        []AuthType
 
 	servedChannels []*Channel
 }
 
-func (s *ConnectionStat) AppendChannel(ch *Channel) {
+func (s *ConnectionStat) appendChannel(ch *Channel) {
 	s.mu.Lock()
 	s.servedChannels = append(s.servedChannels, ch)
 	s.mu.Unlock()
@@ -76,8 +74,8 @@ func (c *Connection) handle(serverConfig *ssh.ServerConfig) {
 		}
 
 		ch1 := NewChannel(newChannel)
-		ch1.MockData = c.MockData
-		c.Stat.AppendChannel(ch1)
+		ch1.mockData = c.mockData
+		c.Stat.appendChannel(ch1)
 
 		go ch1.handle()
 	}

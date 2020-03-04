@@ -22,7 +22,7 @@ func NewChannel(channel ssh.NewChannel) *Channel {
 type Channel struct {
 	Type       string
 	newChannel ssh.NewChannel
-	*MockData
+	mockData *MockData
 	ssh.Channel
 	Stat *ChannelStat
 }
@@ -32,7 +32,7 @@ type ChannelStat struct {
 	requests []interface{}
 }
 
-func (s *ChannelStat) AppendRequest(msg interface{}) {
+func (s *ChannelStat) appendRequest(msg interface{}) {
 	s.mu.Lock()
 	s.requests = append(s.requests, msg)
 	s.mu.Unlock()
@@ -85,7 +85,7 @@ func (ch *Channel) handleRequests(in <-chan *ssh.Request) {
 		case protocol.MsgTypePTYReq:
 			msg = new(protocol.MsgRequestPTY)
 			if err := ssh.Unmarshal(request.Payload, msg); err != nil {
-				ch.Stat.AppendRequest(protocol.NewUnparsedMsg(request.Type, request.Payload))
+				ch.Stat.appendRequest(protocol.NewUnparsedMsg(request.Type, request.Payload))
 				sendReplyFalse(ch.newChannel.ChannelType(), request)
 				return
 			}
@@ -94,7 +94,7 @@ func (ch *Channel) handleRequests(in <-chan *ssh.Request) {
 		case protocol.MsgTypePTYWindowChange:
 			msg = new(protocol.MsgRequestPTYWindowChange)
 			if err := ssh.Unmarshal(request.Payload, msg); err != nil {
-				ch.Stat.AppendRequest(protocol.NewUnparsedMsg(request.Type, request.Payload))
+				ch.Stat.appendRequest(protocol.NewUnparsedMsg(request.Type, request.Payload))
 				sendReplyFalse(ch.newChannel.ChannelType(), request)
 				return
 			}
@@ -103,14 +103,14 @@ func (ch *Channel) handleRequests(in <-chan *ssh.Request) {
 		case protocol.MsgTypeEnv:
 			msg = new(protocol.MsgRequestSetEnv)
 			if err := ssh.Unmarshal(request.Payload, msg); err != nil {
-				ch.Stat.AppendRequest(protocol.NewUnparsedMsg(request.Type, request.Payload))
+				ch.Stat.appendRequest(protocol.NewUnparsedMsg(request.Type, request.Payload))
 				return
 			}
 
 		case protocol.MsgTypeExec:
 			msg = new(protocol.MsgRequestExec)
 			if err := ssh.Unmarshal(request.Payload, msg); err != nil {
-				ch.Stat.AppendRequest(protocol.NewUnparsedMsg(request.Type, request.Payload))
+				ch.Stat.appendRequest(protocol.NewUnparsedMsg(request.Type, request.Payload))
 				sendReplyFalse(ch.newChannel.ChannelType(), request)
 				return
 			}
@@ -119,7 +119,7 @@ func (ch *Channel) handleRequests(in <-chan *ssh.Request) {
 				defer func() {
 					_ = ch.Close()
 				}()
-				for in, out := range ch.mockedExecRequests {
+				for in, out := range ch.mockData.mockedExecRequests {
 					if in == msg.Command {
 						_, _ = ch.Write([]byte(out.result))
 						_, _ = ch.SendRequest("exit-status", false, ssh.Marshal(&protocol.MsgExitStatus{ExitStatus: out.exitStatus}))
@@ -142,6 +142,6 @@ func (ch *Channel) handleRequests(in <-chan *ssh.Request) {
 			msg = protocol.NewUnparsedMsg(request.Type, request.Payload)
 			sendReplyFalse(ch.newChannel.ChannelType(), request)
 		}
-		ch.Stat.AppendRequest(msg)
+		ch.Stat.appendRequest(msg)
 	}
 }
