@@ -68,7 +68,7 @@ func (c *Connection) handle(serverConfig *ssh.ServerConfig) {
 	c.Stat.StopTime = time.Now()
 
 	for _, ch := range c.Stat.ServedChannels {
-		for _, r := range ch.Stat.Requests {
+		for _, r := range ch.Stat.Requests() {
 			debugf("accepted request: %v", r)
 		}
 	}

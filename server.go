@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strconv"
+	"strings"
 	"sync"
 
 	"golang.org/x/crypto/ssh"
@@ -87,7 +89,21 @@ func (s *Server) AddAuthorizedKey(key ssh.PublicKey) {
 	s.authorizedKeysMap[string(key.Marshal())] = struct{}{}
 }
 
-func (s *Server) Start() (err error) {
+func (s *Server) parseAssressPort(addressString string) (host string, port uint16, err error) {
+	parts := strings.SplitN(addressString, ":", 2)
+	if len(parts) < 2 {
+		return host, port, fmt.Errorf("wrong address string: no one ':' found in %s", addressString)
+	}
+	host = parts[0]
+	portI, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return host, port, fmt.Errorf("wrong address string: %s", err)
+	}
+	port = uint16(portI)
+	return
+}
+
+func (s *Server) Start() (address string, port uint16, err error) {
 	s.listener, err = net.Listen("tcp", s.listenAddr)
 	if err != nil {
 		return
@@ -97,7 +113,7 @@ func (s *Server) Start() (err error) {
 
 	s.wg.Add(1)
 	go s.serve()
-	return
+	return s.parseAssressPort(s.listener.Addr().String())
 }
 
 func (s *Server) serve() {

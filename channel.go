@@ -2,6 +2,7 @@ package sshtest
 
 import (
 	"log"
+	"sync"
 
 	"golang.org/x/crypto/ssh"
 
@@ -12,7 +13,9 @@ func NewChannel(channel ssh.NewChannel) *Channel {
 	return &Channel{
 		Type:       channel.ChannelType(),
 		newChannel: channel,
-		Stat:       new(ChannelStat),
+		Stat: &ChannelStat{
+			mu: &sync.Mutex{},
+		},
 	}
 }
 
@@ -25,7 +28,22 @@ type Channel struct {
 }
 
 type ChannelStat struct {
-	Requests []interface{}
+	mu       *sync.Mutex
+	requests []interface{}
+}
+
+func (s *ChannelStat) AppendRequest(msg interface{}) {
+	s.mu.Lock()
+	s.requests = append(s.requests, msg)
+	s.mu.Unlock()
+}
+
+func (s *ChannelStat) Requests() []interface{} {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	result := make([]interface{}, 0, len(s.requests))
+	copy(result, s.requests)
+	return result
 }
 
 func (ch *Channel) handle() {
@@ -67,7 +85,7 @@ func (ch *Channel) handleRequests(in <-chan *ssh.Request) {
 		case protocol.MsgTypePTYReq:
 			msg = new(protocol.MsgRequestPTY)
 			if err := ssh.Unmarshal(request.Payload, msg); err != nil {
-				ch.Stat.Requests = append(ch.Stat.Requests, protocol.NewUnparsedMsg(request.Type, request.Payload))
+				ch.Stat.AppendRequest(protocol.NewUnparsedMsg(request.Type, request.Payload))
 				sendReplyFalse(ch.newChannel.ChannelType(), request)
 				return
 			}
@@ -76,7 +94,7 @@ func (ch *Channel) handleRequests(in <-chan *ssh.Request) {
 		case protocol.MsgTypePTYWindowChange:
 			msg = new(protocol.MsgRequestPTYWindowChange)
 			if err := ssh.Unmarshal(request.Payload, msg); err != nil {
-				ch.Stat.Requests = append(ch.Stat.Requests, protocol.NewUnparsedMsg(request.Type, request.Payload))
+				ch.Stat.AppendRequest(protocol.NewUnparsedMsg(request.Type, request.Payload))
 				sendReplyFalse(ch.newChannel.ChannelType(), request)
 				return
 			}
@@ -85,14 +103,14 @@ func (ch *Channel) handleRequests(in <-chan *ssh.Request) {
 		case protocol.MsgTypeEnv:
 			msg = new(protocol.MsgRequestSetEnv)
 			if err := ssh.Unmarshal(request.Payload, msg); err != nil {
-				ch.Stat.Requests = append(ch.Stat.Requests, protocol.NewUnparsedMsg(request.Type, request.Payload))
+				ch.Stat.AppendRequest(protocol.NewUnparsedMsg(request.Type, request.Payload))
 				return
 			}
 
 		case protocol.MsgTypeExec:
 			msg = new(protocol.MsgRequestExec)
 			if err := ssh.Unmarshal(request.Payload, msg); err != nil {
-				ch.Stat.Requests = append(ch.Stat.Requests, protocol.NewUnparsedMsg(request.Type, request.Payload))
+				ch.Stat.AppendRequest(protocol.NewUnparsedMsg(request.Type, request.Payload))
 				sendReplyFalse(ch.newChannel.ChannelType(), request)
 				return
 			}
@@ -124,6 +142,6 @@ func (ch *Channel) handleRequests(in <-chan *ssh.Request) {
 			msg = protocol.NewUnparsedMsg(request.Type, request.Payload)
 			sendReplyFalse(ch.newChannel.ChannelType(), request)
 		}
-		ch.Stat.Requests = append(ch.Stat.Requests, msg)
+		ch.Stat.AppendRequest(msg)
 	}
 }
