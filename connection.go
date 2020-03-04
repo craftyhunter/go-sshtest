@@ -3,6 +3,7 @@ package sshtest
 import (
 	"log"
 	"net"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -22,6 +23,7 @@ type Connection struct {
 }
 
 type ConnectionStat struct {
+	mu        sync.Mutex
 	StartTime time.Time
 	StopTime  time.Time
 
@@ -30,7 +32,21 @@ type ConnectionStat struct {
 	Authenticated    bool
 	AuthTries        []AuthType
 
-	ServedChannels []*Channel
+	servedChannels []*Channel
+}
+
+func (s *ConnectionStat) AppendChannel(ch *Channel) {
+	s.mu.Lock()
+	s.servedChannels = append(s.servedChannels, ch)
+	s.mu.Unlock()
+}
+
+func (s *ConnectionStat) ServedChannels() []*Channel {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	result := make([]*Channel, 0, len(s.servedChannels))
+	copy(result, s.servedChannels)
+	return result
 }
 
 func (c *Connection) handle(serverConfig *ssh.ServerConfig) {
@@ -61,13 +77,13 @@ func (c *Connection) handle(serverConfig *ssh.ServerConfig) {
 
 		ch1 := NewChannel(newChannel)
 		ch1.MockData = c.MockData
-		c.Stat.ServedChannels = append(c.Stat.ServedChannels, ch1)
+		c.Stat.AppendChannel(ch1)
 
 		go ch1.handle()
 	}
 	c.Stat.StopTime = time.Now()
 
-	for _, ch := range c.Stat.ServedChannels {
+	for _, ch := range c.Stat.ServedChannels() {
 		for _, r := range ch.Stat.Requests() {
 			debugf("accepted request: %v", r)
 		}

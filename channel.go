@@ -14,7 +14,7 @@ func NewChannel(channel ssh.NewChannel) *Channel {
 		Type:       channel.ChannelType(),
 		newChannel: channel,
 		Stat: &ChannelStat{
-			mu: &sync.Mutex{},
+			mu: sync.Mutex{},
 		},
 	}
 }
@@ -28,7 +28,7 @@ type Channel struct {
 }
 
 type ChannelStat struct {
-	mu       *sync.Mutex
+	mu       sync.Mutex
 	requests []interface{}
 }
 
