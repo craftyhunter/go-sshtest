@@ -41,9 +41,7 @@ func (s *ChannelStat) appendRequest(msg interface{}) {
 func (s *ChannelStat) Requests() []interface{} {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	result := make([]interface{}, 0, len(s.requests))
-	copy(result, s.requests)
-	return result
+	return append([]interface{}{}, s.requests...)
 }
 
 func (ch *Channel) handle() {
@@ -54,13 +52,6 @@ func (ch *Channel) handle() {
 	ch.Channel = channel
 
 	go ch.handleRequests(requests)
-
-	ch.handleChannel()
-
-}
-
-func (ch *Channel) handleChannel() {
-
 }
 
 func sendReplyTrue(chType string, request *ssh.Request) {
@@ -106,6 +97,7 @@ func (ch *Channel) handleRequests(in <-chan *ssh.Request) {
 				ch.Stat.appendRequest(protocol.NewUnparsedMsg(request.Type, request.Payload))
 				return
 			}
+			sendReplyTrue(ch.newChannel.ChannelType(), request)
 
 		case protocol.MsgTypeExec:
 			msg = new(protocol.MsgRequestExec)

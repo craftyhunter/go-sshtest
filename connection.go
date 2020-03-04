@@ -1,6 +1,7 @@
 package sshtest
 
 import (
+	"io"
 	"log"
 	"net"
 	"sync"
@@ -12,23 +13,23 @@ import (
 func NewConnection(conn net.Conn) *Connection {
 	return &Connection{
 		Conn: conn,
-		Stat: new(ConnectionStat),
+		Stat: &ConnectionStat{
+			mu: sync.Mutex{},
+		},
 	}
 }
 
 type Connection struct {
 	net.Conn
-	mockData *MockData
-	Stat *ConnectionStat
+	ClientConn *ssh.ServerConn
+	mockData   *MockData
+	Stat       *ConnectionStat
 }
 
 type ConnectionStat struct {
 	mu        sync.Mutex
 	StartTime time.Time
 	StopTime  time.Time
-
-	ClientVersion    string
-	ClientRemoteAddr string
 
 	servedChannels []*Channel
 }
@@ -42,9 +43,7 @@ func (s *ConnectionStat) appendChannel(ch *Channel) {
 func (s *ConnectionStat) ServedChannels() []*Channel {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	result := make([]*Channel, 0, len(s.servedChannels))
-	copy(result, s.servedChannels)
-	return result
+	return append([]*Channel{}, s.servedChannels...)
 }
 
 func (c *Connection) handle(serverConfig *ssh.ServerConfig) {
@@ -57,11 +56,13 @@ func (c *Connection) handle(serverConfig *ssh.ServerConfig) {
 
 	clientConn, channels, reqs, err := ssh.NewServerConn(c, serverConfig)
 	if err != nil {
-		log.Fatal("failed to handshake: ", err)
+		if err != io.EOF {
+			log.Fatal("failed to handshake: ", err)
+		}
+		return
 	}
 	debugf("client '%s' connected from %s", clientConn.ClientVersion(), c.RemoteAddr().String())
-	c.Stat.ClientVersion = string(clientConn.ClientVersion())
-	c.Stat.ClientRemoteAddr = c.RemoteAddr().String()
+	c.ClientConn = clientConn
 
 	// The incoming Request channel must be serviced.
 	go ssh.DiscardRequests(reqs)
@@ -83,7 +84,7 @@ func (c *Connection) handle(serverConfig *ssh.ServerConfig) {
 
 	for _, ch := range c.Stat.ServedChannels() {
 		for _, r := range ch.Stat.Requests() {
-			debugf("accepted request: %v", r)
+			debugf("accepted request: %[1]T %[1]v", r)
 		}
 	}
 
