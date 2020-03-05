@@ -2,6 +2,7 @@ package sshtest
 
 import (
 	"sync"
+	"time"
 )
 
 func NewMockData() *MockData {
@@ -19,8 +20,9 @@ type MockData struct {
 }
 
 type mockedExecResultStatus struct {
-	result     string
 	exitStatus uint32
+	result     string
+	timeout    time.Duration
 }
 
 func (m *MockData) getMocksExecResult() map[string]mockedExecResultStatus {
@@ -33,11 +35,12 @@ func (m *MockData) getMocksExecResult() map[string]mockedExecResultStatus {
 	return result
 }
 
-func (m *MockData) MockExecResult(command, result string, exitStatus uint32) {
+func (m *MockData) MockExecResult(command, result string, timeout time.Duration, exitStatus uint32) {
 	m.mu.Lock()
 	m.mockedExecRequests[command] = mockedExecResultStatus{
-		result:     result,
 		exitStatus: exitStatus,
+		result:     result,
+		timeout:    timeout,
 	}
 	m.mu.Unlock()
 }

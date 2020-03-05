@@ -67,15 +67,16 @@ func (c *Connection) handle(serverConfig *ssh.ServerConfig) {
 
 	for newChannel := range channels {
 		debugf("channel '%s' accepted", newChannel.ChannelType())
-		if newChannel.ChannelType() != "session" {
+		switch newChannel.ChannelType() {
+		case "session":
+			ch1 := NewChannel(newChannel, c.mockData)
+			c.appendChannel(ch1)
+			go ch1.handle()
+		case "auth-agent@openssh.com":
 			_ = newChannel.Reject(ssh.UnknownChannelType, "unknown channel type")
-			return
+		default:
+			_ = newChannel.Reject(ssh.UnknownChannelType, "unknown channel type")
 		}
-
-		ch1 := NewChannel(newChannel, c.mockData)
-		c.appendChannel(ch1)
-
-		go ch1.handle()
 	}
 	c.stopTime = time.Now()
 	debugf("client from '%s' disconnected. Duration: %s", c.Conn.RemoteAddr().String(), c.stopTime.Sub(c.startTime).String())

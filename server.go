@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -32,6 +33,9 @@ type Server struct {
 	wg   sync.WaitGroup
 
 	*MockData
+
+	// timeout before force disconnect all clients when server is stopping
+	StopTimeout time.Duration
 
 	mu sync.Mutex
 	// keys for authorize clients
@@ -66,6 +70,7 @@ func NewServer(listenAddr string, serverKey ssh.Signer) (server *Server) {
 				return nil, fmt.Errorf("unknown public key for %q", c.User())
 			},
 		},
+		StopTimeout:       time.Second * 10,
 		authorizedKeysMap: make(map[string]struct{}),
 		listenAddr:        listenAddr,
 		MockData:          NewMockData(),
@@ -153,7 +158,20 @@ func (s *Server) Stop() {
 	debug("Stopping server ...")
 	close(s.quit)
 	_ = s.listener.Close()
-	s.wg.Wait()
+	clientsDisconnected := make(chan struct{})
+	go func() {
+		s.wg.Wait()
+		clientsDisconnected <- struct{}{}
+	}()
+	go func() {
+		time.Sleep(s.StopTimeout)
+		for _, c := range s.ServedConnections() {
+			debugf("Closing connection from %s ...", c.RemoteAddr().String())
+			_ = c.Close()
+		}
+		clientsDisconnected <- struct{}{}
+	}()
+	<-clientsDisconnected
 	debug("Server stopped ...")
 }
 

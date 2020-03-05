@@ -2,6 +2,7 @@ package sshtest
 
 import (
 	"sync"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 
@@ -77,7 +78,6 @@ func (ch *Channel) handleRequests(in <-chan *ssh.Request) {
 			if err := ssh.Unmarshal(request.Payload, msg); err != nil {
 				ch.appendRequest(protocol.NewUnparsedMsg(request.Type, request.Payload))
 				sendReplyFalse(ch.newChannel.ChannelType(), request)
-				return
 			}
 			sendReplyTrue(ch.newChannel.ChannelType(), request)
 
@@ -86,7 +86,6 @@ func (ch *Channel) handleRequests(in <-chan *ssh.Request) {
 			if err := ssh.Unmarshal(request.Payload, msg); err != nil {
 				ch.appendRequest(protocol.NewUnparsedMsg(request.Type, request.Payload))
 				sendReplyFalse(ch.newChannel.ChannelType(), request)
-				return
 			}
 			sendReplyTrue(ch.newChannel.ChannelType(), request)
 
@@ -94,7 +93,6 @@ func (ch *Channel) handleRequests(in <-chan *ssh.Request) {
 			msg = new(protocol.MsgRequestSetEnv)
 			if err := ssh.Unmarshal(request.Payload, msg); err != nil {
 				ch.appendRequest(protocol.NewUnparsedMsg(request.Type, request.Payload))
-				return
 			}
 			sendReplyTrue(ch.newChannel.ChannelType(), request)
 
@@ -103,7 +101,6 @@ func (ch *Channel) handleRequests(in <-chan *ssh.Request) {
 			if err := ssh.Unmarshal(request.Payload, msg); err != nil {
 				ch.appendRequest(protocol.NewUnparsedMsg(request.Type, request.Payload))
 				sendReplyFalse(ch.newChannel.ChannelType(), request)
-				return
 			}
 
 			go func(ch *Channel, msg *protocol.MsgRequestExec) {
@@ -112,6 +109,7 @@ func (ch *Channel) handleRequests(in <-chan *ssh.Request) {
 				}()
 				for in, out := range ch.mockData.getMocksExecResult() {
 					if in == msg.Command {
+						time.Sleep(out.timeout)
 						_, _ = ch.Write([]byte(out.result))
 						_, _ = ch.SendRequest("exit-status", false, ssh.Marshal(&protocol.MsgExitStatus{ExitStatus: out.exitStatus}))
 						return
@@ -121,10 +119,9 @@ func (ch *Channel) handleRequests(in <-chan *ssh.Request) {
 			}(ch, msg.(*protocol.MsgRequestExec))
 			sendReplyTrue(ch.newChannel.ChannelType(), request)
 
-		//case "auth-agent-req@openssh.com":
-		//	if request.WantReply {
-		//		_ = request.Reply(true, nil)
-		//	}
+		case protocol.MsgTypeAuthAgent:
+			msg = new(protocol.MsgRequestAuthAgent)
+			sendReplyTrue(ch.newChannel.ChannelType(), request)
 
 		case protocol.MsgTypeShell:
 			msg = new(protocol.MsgRequestShell)

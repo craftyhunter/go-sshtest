@@ -16,7 +16,7 @@ import (
 func TestNewServer(t *testing.T) {
 	server := NewMockedServer()
 	server.ServerConfig.NoClientAuth = true
-	server.MockExecResult("echo OK", "OK\n", 0)
+	server.MockExecResult("echo OK", "OK\n", 0, 0)
 
 	host, port, err := server.Start()
 	require.NoError(t, err)
