@@ -15,8 +15,9 @@ import (
 
 func TestNewServer(t *testing.T) {
 	server := NewMockedServer()
-	server.AllowClientNoAuth()
+	server.ServerConfig.NoClientAuth = true
 	server.MockExecResult("echo OK", "OK\n", 0)
+
 	host, port, err := server.Start()
 	require.NoError(t, err)
 	require.True(t, serverIsAlive(host, port))
@@ -38,19 +39,19 @@ func TestNewServer(t *testing.T) {
 	require.Equal(t, client.User, servedConn.ClientConn.User())
 
 	// check channel
-	require.Len(t, servedConn.Stat.ServedChannels(), 1)
-	servedChan := servedConn.Stat.ServedChannels()[0]
+	require.Len(t, servedConn.ServedChannels(), 1)
+	servedChan := servedConn.ServedChannels()[0]
 	require.Equal(t, "session", servedChan.Type)
 
 	// check requests
-	require.Len(t, servedChan.Stat.Requests(), 2)
-	envReqRaw := servedChan.Stat.Requests()[0]
+	require.Len(t, servedChan.Requests(), 2)
+	envReqRaw := servedChan.Requests()[0]
 	require.IsType(t, &protocol.MsgRequestSetEnv{}, envReqRaw)
 	envReq := envReqRaw.(*protocol.MsgRequestSetEnv)
 	require.Equal(t, "VAR1", envReq.Name)
 	require.Equal(t, "VALUE1", envReq.Value)
 
-	execReqRaw := servedChan.Stat.Requests()[1]
+	execReqRaw := servedChan.Requests()[1]
 	require.IsType(t, &protocol.MsgRequestExec{}, execReqRaw)
 	execReq := execReqRaw.(*protocol.MsgRequestExec)
 	require.Equal(t, "echo OK", execReq.Command)
@@ -62,14 +63,9 @@ func TestNewServer(t *testing.T) {
 }
 
 func TestServer_AddAuthorizedKey(t *testing.T) {
-	privateKey, _ := generateRSAKey(2048)
-	signer, err := ssh.NewSignerFromKey(privateKey)
-	require.NoError(t, err)
-	publicRSAKey, err := ssh.NewPublicKey(&privateKey.PublicKey)
-	require.NoError(t, err)
-
+	signer, publicKey := NewSSHKeyPair(2048)
 	server := NewMockedServer()
-	server.AddAuthorizedKey(publicRSAKey)
+	server.AddAuthorizedKey(publicKey)
 	host, port, err := server.Start()
 	require.NoError(t, err)
 
@@ -79,6 +75,17 @@ func TestServer_AddAuthorizedKey(t *testing.T) {
 
 	err = client.Connect(host, port)
 	require.NoError(t, err)
+
+	signer2, _ := NewSSHKeyPair(2048)
+	client2 := NewTestClient()
+	client2.User = "user2"
+	client2.ClientConfig.Auth = []ssh.AuthMethod{ssh.PublicKeys(signer2)}
+	client2.Command = "echo OK"
+
+	err = client2.Connect(host, port)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "ssh: handshake failed: ssh: unable to authenticate")
+
 	server.Stop()
 	server.Wait()
 }

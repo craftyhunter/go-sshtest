@@ -3,7 +3,6 @@ package sshtest
 import (
 	"crypto/rsa"
 	"fmt"
-	"log"
 	"net"
 	"strconv"
 	"strings"
@@ -11,8 +10,6 @@ import (
 
 	"golang.org/x/crypto/ssh"
 )
-
-type AuthType int
 
 const (
 	ServerVersion = "SSH-2.0-ServerMock 1.0"
@@ -34,17 +31,17 @@ type Server struct {
 	quit chan struct{}
 	wg   sync.WaitGroup
 
+	*MockData
+
+	mu sync.Mutex
 	// keys for authorize clients
 	authorizedKeys    []ssh.PublicKey
 	authorizedKeysMap map[string]struct{}
-
-	*MockData
-
 	servedConnections []*Connection
 }
 
 func NewMockedServer() (server *Server) {
-	privateKey, _ := generateRSAKey(2048)
+	privateKey := NewRSAKey(2048)
 	signer, _ := ssh.NewSignerFromKey(privateKey)
 	server = NewServer("localhost:0", signer)
 	server.privateKey = privateKey
@@ -53,41 +50,50 @@ func NewMockedServer() (server *Server) {
 
 func NewServer(listenAddr string, serverKey ssh.Signer) (server *Server) {
 	server = &Server{
-		ServerConfig:      &ssh.ServerConfig{ServerVersion: ServerVersion},
+		ServerConfig: &ssh.ServerConfig{
+			ServerVersion: ServerVersion,
+			PublicKeyCallback: func(c ssh.ConnMetadata, pubKey ssh.PublicKey) (*ssh.Permissions, error) {
+				server.mu.Lock()
+				defer server.mu.Unlock()
+				if _, ok := server.authorizedKeysMap[string(pubKey.Marshal())]; ok {
+					return &ssh.Permissions{
+						// Record the public key used for authentication.
+						Extensions: map[string]string{
+							"pubkey-fp": ssh.FingerprintSHA256(pubKey),
+						},
+					}, nil
+				}
+				return nil, fmt.Errorf("unknown public key for %q", c.User())
+			},
+		},
 		authorizedKeysMap: make(map[string]struct{}),
 		listenAddr:        listenAddr,
 		MockData:          NewMockData(),
 		quit:              make(chan struct{}),
 	}
 
-	server.ServerConfig.PublicKeyCallback = func(c ssh.ConnMetadata, pubKey ssh.PublicKey) (*ssh.Permissions, error) {
-		if _, ok := server.authorizedKeysMap[string(pubKey.Marshal())]; ok {
-			return &ssh.Permissions{
-				// Record the public key used for authentication.
-				Extensions: map[string]string{
-					"pubkey-fp": ssh.FingerprintSHA256(pubKey),
-				},
-			}, nil
-		}
-		return nil, fmt.Errorf("unknown public key for %q", c.User())
-	}
-
 	server.ServerConfig.AddHostKey(serverKey)
 	return
 }
 
-func (s *Server) ServedConnections() []*Connection {
-	return s.servedConnections
+func (s *Server) appendConnection(conn *Connection) {
+	s.mu.Lock()
+	s.servedConnections = append(s.servedConnections, conn)
+	s.mu.Unlock()
 }
 
-func (s *Server) AllowClientNoAuth() {
-	s.ServerConfig.NoClientAuth = true
+func (s *Server) ServedConnections() []*Connection {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]*Connection{}, s.servedConnections...)
 }
 
 func (s *Server) AddAuthorizedKey(key ssh.PublicKey) {
+	s.mu.Lock()
 	debugf("added client authorized key: '%s'", key.Type())
 	s.authorizedKeys = append(s.authorizedKeys, key)
 	s.authorizedKeysMap[string(key.Marshal())] = struct{}{}
+	s.mu.Unlock()
 }
 
 func (s *Server) parseAssressPort(addressString string) (host string, port uint16, err error) {
@@ -126,14 +132,14 @@ func (s *Server) serve() {
 			case <-s.quit:
 				return
 			default:
-				log.Fatalf("failed to accept incoming connection: %T", err)
+				debugf("failed to accept incoming connection: %[1]T %[1]v", err)
+				return
 			}
 		}
 
 		debugf("accepted new connection from %s", netConn.RemoteAddr().String())
-		conn := NewConnection(netConn)
-		s.servedConnections = append(s.servedConnections, conn)
-		conn.mockData = s.MockData
+		conn := NewConnection(netConn, s.MockData)
+		s.appendConnection(conn)
 
 		s.wg.Add(1)
 		go func() {

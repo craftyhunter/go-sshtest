@@ -2,7 +2,6 @@ package sshtest
 
 import (
 	"io"
-	"log"
 	"net"
 	"sync"
 	"time"
@@ -10,12 +9,11 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-func NewConnection(conn net.Conn) *Connection {
+func NewConnection(conn net.Conn, mockData *MockData) *Connection {
 	return &Connection{
-		Conn: conn,
-		Stat: &ConnectionStat{
-			mu: sync.Mutex{},
-		},
+		Conn:     conn,
+		mockData: mockData,
+		mu:       sync.Mutex{},
 	}
 }
 
@@ -23,31 +21,30 @@ type Connection struct {
 	net.Conn
 	ClientConn *ssh.ServerConn
 	mockData   *MockData
-	Stat       *ConnectionStat
-}
 
-type ConnectionStat struct {
-	mu        sync.Mutex
-	StartTime time.Time
-	StopTime  time.Time
-
+	mu             sync.Mutex
+	startTime      time.Time
+	stopTime       time.Time
 	servedChannels []*Channel
 }
 
-func (s *ConnectionStat) appendChannel(ch *Channel) {
+type ConnectionStat struct {
+}
+
+func (s *Connection) appendChannel(ch *Channel) {
 	s.mu.Lock()
 	s.servedChannels = append(s.servedChannels, ch)
 	s.mu.Unlock()
 }
 
-func (s *ConnectionStat) ServedChannels() []*Channel {
+func (s *Connection) ServedChannels() []*Channel {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]*Channel{}, s.servedChannels...)
 }
 
 func (c *Connection) handle(serverConfig *ssh.ServerConfig) {
-	c.Stat.StartTime = time.Now()
+	c.startTime = time.Now()
 	defer func() {
 		_ = c.Close()
 		debugf("connection from '%s' closed", c.Conn.RemoteAddr().String())
@@ -57,7 +54,8 @@ func (c *Connection) handle(serverConfig *ssh.ServerConfig) {
 	clientConn, channels, reqs, err := ssh.NewServerConn(c, serverConfig)
 	if err != nil {
 		if err != io.EOF {
-			log.Fatal("failed to handshake: ", err)
+			debugf("failed to handshake: %s", err)
+			return
 		}
 		return
 	}
@@ -74,19 +72,17 @@ func (c *Connection) handle(serverConfig *ssh.ServerConfig) {
 			return
 		}
 
-		ch1 := NewChannel(newChannel)
-		ch1.mockData = c.mockData
-		c.Stat.appendChannel(ch1)
+		ch1 := NewChannel(newChannel, c.mockData)
+		c.appendChannel(ch1)
 
 		go ch1.handle()
 	}
-	c.Stat.StopTime = time.Now()
+	c.stopTime = time.Now()
+	debugf("client from '%s' disconnected. Duration: %s", c.Conn.RemoteAddr().String(), c.stopTime.Sub(c.startTime).String())
 
-	for _, ch := range c.Stat.ServedChannels() {
-		for _, r := range ch.Stat.Requests() {
+	for _, ch := range c.ServedChannels() {
+		for _, r := range ch.Requests() {
 			debugf("accepted request: %[1]T %[1]v", r)
 		}
 	}
-
-	debugf("client from '%s' disconnected. Duration: %s", c.Conn.RemoteAddr().String(), c.Stat.StopTime.Sub(c.Stat.StartTime).String())
 }

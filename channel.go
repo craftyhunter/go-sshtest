@@ -1,7 +1,6 @@
 package sshtest
 
 import (
-	"log"
 	"sync"
 
 	"golang.org/x/crypto/ssh"
@@ -9,36 +8,35 @@ import (
 	"github.com/craftyhunter/go-sshtest/protocol"
 )
 
-func NewChannel(channel ssh.NewChannel) *Channel {
+func NewChannel(channel ssh.NewChannel, mockData *MockData) *Channel {
 	return &Channel{
 		Type:       channel.ChannelType(),
 		newChannel: channel,
-		Stat: &ChannelStat{
-			mu: sync.Mutex{},
-		},
+		mockData:   mockData,
+		mu:         sync.Mutex{},
 	}
 }
 
 type Channel struct {
+	ssh.Channel
 	Type       string
 	newChannel ssh.NewChannel
-	mockData *MockData
-	ssh.Channel
-	Stat *ChannelStat
-}
+	mockData   *MockData
 
-type ChannelStat struct {
 	mu       sync.Mutex
 	requests []interface{}
 }
 
-func (s *ChannelStat) appendRequest(msg interface{}) {
+type ChannelStat struct {
+}
+
+func (s *Channel) appendRequest(msg interface{}) {
 	s.mu.Lock()
 	s.requests = append(s.requests, msg)
 	s.mu.Unlock()
 }
 
-func (s *ChannelStat) Requests() []interface{} {
+func (s *Channel) Requests() []interface{} {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]interface{}{}, s.requests...)
@@ -47,7 +45,8 @@ func (s *ChannelStat) Requests() []interface{} {
 func (ch *Channel) handle() {
 	channel, requests, err := ch.newChannel.Accept()
 	if err != nil {
-		log.Fatalf("could not accept channel: %v", err)
+		debugf("could not accept channel: %v", err)
+		return
 	}
 	ch.Channel = channel
 
@@ -76,7 +75,7 @@ func (ch *Channel) handleRequests(in <-chan *ssh.Request) {
 		case protocol.MsgTypePTYReq:
 			msg = new(protocol.MsgRequestPTY)
 			if err := ssh.Unmarshal(request.Payload, msg); err != nil {
-				ch.Stat.appendRequest(protocol.NewUnparsedMsg(request.Type, request.Payload))
+				ch.appendRequest(protocol.NewUnparsedMsg(request.Type, request.Payload))
 				sendReplyFalse(ch.newChannel.ChannelType(), request)
 				return
 			}
@@ -85,7 +84,7 @@ func (ch *Channel) handleRequests(in <-chan *ssh.Request) {
 		case protocol.MsgTypePTYWindowChange:
 			msg = new(protocol.MsgRequestPTYWindowChange)
 			if err := ssh.Unmarshal(request.Payload, msg); err != nil {
-				ch.Stat.appendRequest(protocol.NewUnparsedMsg(request.Type, request.Payload))
+				ch.appendRequest(protocol.NewUnparsedMsg(request.Type, request.Payload))
 				sendReplyFalse(ch.newChannel.ChannelType(), request)
 				return
 			}
@@ -94,7 +93,7 @@ func (ch *Channel) handleRequests(in <-chan *ssh.Request) {
 		case protocol.MsgTypeEnv:
 			msg = new(protocol.MsgRequestSetEnv)
 			if err := ssh.Unmarshal(request.Payload, msg); err != nil {
-				ch.Stat.appendRequest(protocol.NewUnparsedMsg(request.Type, request.Payload))
+				ch.appendRequest(protocol.NewUnparsedMsg(request.Type, request.Payload))
 				return
 			}
 			sendReplyTrue(ch.newChannel.ChannelType(), request)
@@ -102,7 +101,7 @@ func (ch *Channel) handleRequests(in <-chan *ssh.Request) {
 		case protocol.MsgTypeExec:
 			msg = new(protocol.MsgRequestExec)
 			if err := ssh.Unmarshal(request.Payload, msg); err != nil {
-				ch.Stat.appendRequest(protocol.NewUnparsedMsg(request.Type, request.Payload))
+				ch.appendRequest(protocol.NewUnparsedMsg(request.Type, request.Payload))
 				sendReplyFalse(ch.newChannel.ChannelType(), request)
 				return
 			}
@@ -111,7 +110,7 @@ func (ch *Channel) handleRequests(in <-chan *ssh.Request) {
 				defer func() {
 					_ = ch.Close()
 				}()
-				for in, out := range ch.mockData.mockedExecRequests {
+				for in, out := range ch.mockData.getMocksExecResult() {
 					if in == msg.Command {
 						_, _ = ch.Write([]byte(out.result))
 						_, _ = ch.SendRequest("exit-status", false, ssh.Marshal(&protocol.MsgExitStatus{ExitStatus: out.exitStatus}))
@@ -134,6 +133,6 @@ func (ch *Channel) handleRequests(in <-chan *ssh.Request) {
 			msg = protocol.NewUnparsedMsg(request.Type, request.Payload)
 			sendReplyFalse(ch.newChannel.ChannelType(), request)
 		}
-		ch.Stat.appendRequest(msg)
+		ch.appendRequest(msg)
 	}
 }
