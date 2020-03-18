@@ -12,9 +12,9 @@ func NewRSAKey(bitSize int) *rsa.PrivateKey {
 	return key
 }
 
-func NewSSHKeyPair(bitSize int) (private ssh.Signer, public ssh.PublicKey) {
-	key := NewRSAKey(bitSize)
-	private, _ = ssh.NewSignerFromKey(key)
-	public, _ = ssh.NewPublicKey(&key.PublicKey)
+// NewSSHKeyPair generate new key pair
+func NewSSHKeyPair(bitSize int) (private *rsa.PrivateKey, public ssh.PublicKey) {
+	private = NewRSAKey(bitSize)
+	public, _ = ssh.NewPublicKey(&private.PublicKey)
 	return
 }
