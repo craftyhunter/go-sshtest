@@ -123,6 +123,7 @@ type MsgChannelOpenForwarded struct {
 // type: "direct-tcpip"
 type MsgChannelOpenDirect struct {
 	RAddr string
+	RPort uint32
 	LAddr string
 	LPort uint32
 }
