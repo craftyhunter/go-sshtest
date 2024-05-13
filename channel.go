@@ -103,6 +103,7 @@ func (ch *Channel) handleRequests(in <-chan *ssh.Request) {
 				sendReplyFalse(ch.newChannel.ChannelType(), request)
 			}
 
+			sendReplyTrue(ch.newChannel.ChannelType(), request)
 			go func(ch *Channel, msg *protocol.MsgRequestExec) {
 				defer func() {
 					_ = ch.Close()
@@ -117,7 +118,6 @@ func (ch *Channel) handleRequests(in <-chan *ssh.Request) {
 				}
 				_, _ = ch.SendRequest("exit-status", false, ssh.Marshal(protocol.MsgExitStatus{ExitStatus: 0}))
 			}(ch, msg.(*protocol.MsgRequestExec))
-			sendReplyTrue(ch.newChannel.ChannelType(), request)
 
 		case protocol.MsgTypeAuthAgent:
 			msg = new(protocol.MsgRequestAuthAgent)
