@@ -62,8 +62,13 @@ func (c *Connection) handle(serverConfig *ssh.ServerConfig) {
 	debugf("client '%s' connected from %s", clientConn.ClientVersion(), c.RemoteAddr().String())
 	c.ClientConn = clientConn
 
+	var wg sync.WaitGroup
 	// The incoming Request channel must be serviced.
-	go ssh.DiscardRequests(reqs)
+	wg.Add(1)
+	go func() {
+		ssh.DiscardRequests(reqs)
+		wg.Done()
+	}()
 
 	for newChannel := range channels {
 		debugf("channel '%s' accepted", newChannel.ChannelType())
@@ -71,13 +76,19 @@ func (c *Connection) handle(serverConfig *ssh.ServerConfig) {
 		case "session":
 			ch1 := NewChannel(newChannel, c.mockData)
 			c.appendChannel(ch1)
-			go ch1.handle()
+			wg.Add(1)
+			go func() {
+				ch1.handle()
+				wg.Done()
+			}()
 		case "auth-agent@openssh.com":
 			_ = newChannel.Reject(ssh.UnknownChannelType, "unknown channel type")
 		default:
 			_ = newChannel.Reject(ssh.UnknownChannelType, "unknown channel type")
 		}
 	}
+	wg.Wait()
+
 	c.stopTime = time.Now()
 	debugf("client from '%s' disconnected. Duration: %s", c.Conn.RemoteAddr().String(), c.stopTime.Sub(c.startTime).String())
 

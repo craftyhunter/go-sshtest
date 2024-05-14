@@ -51,7 +51,7 @@ func (ch *Channel) handle() {
 	}
 	ch.Channel = channel
 
-	go ch.handleRequests(requests)
+	ch.handleRequests(requests)
 }
 
 func sendReplyTrue(chType string, request *ssh.Request) {
